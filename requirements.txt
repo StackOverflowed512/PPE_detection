@@ -4,3 +4,4 @@ numpy
 Pillow
 ultralytics
 tk
+dlib>=19.19.0

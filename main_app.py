@@ -1,8 +1,11 @@
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
 import cv2
-import face_recognition
-import numpy as np
 import os
 import datetime
+from PIL import Image, ImageTk
+import face_recognition
+import numpy as np
 import json
 from ultralytics import YOLO
 import sqlite3
@@ -406,5 +409,270 @@ def main():
     video_capture.release()
     cv2.destroyAllWindows()
 
-if __name__ == '__main__':
+class PersonRegistrationForm:
+    def __init__(self, parent):
+        self.window = tk.Toplevel(parent)
+        self.window.title("Person Registration")
+        self.window.geometry("500x600")
+        self.create_widgets()
+        
+    def create_widgets(self):
+        # Create form fields with labels and entries
+        ttk.Label(self.window, text="Person Registration", font=('Helvetica', 16, 'bold')).pack(pady=20)
+        
+        form_frame = ttk.Frame(self.window)
+        form_frame.pack(padx=20, pady=10, fill='x')
+        
+        # Display Name
+        ttk.Label(form_frame, text="Display Name:").pack(fill='x', pady=5)
+        self.name_entry = ttk.Entry(form_frame, width=40)
+        self.name_entry.pack(fill='x', pady=5)
+        
+        # Age
+        ttk.Label(form_frame, text="Age:").pack(fill='x', pady=5)
+        self.age_entry = ttk.Entry(form_frame, width=40)
+        self.age_entry.pack(fill='x', pady=5)
+        
+        # Function/Role
+        ttk.Label(form_frame, text="Function/Role:").pack(fill='x', pady=5)
+        self.function_entry = ttk.Entry(form_frame, width=40)
+        self.function_entry.pack(fill='x', pady=5)
+        
+        # Person ID
+        ttk.Label(form_frame, text="Person ID Code:").pack(fill='x', pady=5)
+        self.id_entry = ttk.Entry(form_frame, width=40)
+        self.id_entry.pack(fill='x', pady=5)
+        
+        # Hashcode
+        ttk.Label(form_frame, text="Hashcode (Optional):").pack(fill='x', pady=5)
+        self.hashcode_entry = ttk.Entry(form_frame, width=40)
+        self.hashcode_entry.pack(fill='x', pady=5)
+        
+        # Image selection
+        ttk.Label(form_frame, text="Profile Image:").pack(fill='x', pady=5)
+        self.image_path = tk.StringVar()
+        ttk.Label(form_frame, textvariable=self.image_path).pack(fill='x', pady=5)
+        ttk.Button(form_frame, text="Select Image", command=self.select_image).pack(fill='x', pady=10)
+        
+        # Submit button
+        ttk.Button(form_frame, text="Register Person", command=self.register_person).pack(fill='x', pady=20)
+        
+    def select_image(self):
+        filetypes = [
+            ("Image files", "*.jpg *.jpeg *.png *.bmp"),
+            ("All files", "*.*")
+        ]
+        filename = filedialog.askopenfilename(title="Select Profile Image", filetypes=filetypes)
+        if filename:
+            self.image_path.set(filename)
+            
+    def register_person(self):
+        # Gather form data
+        data = {
+            'display_name': self.name_entry.get(),
+            'age': self.age_entry.get(),
+            'function': self.function_entry.get(),
+            'person_id': self.id_entry.get(),
+            'hashcode': self.hashcode_entry.get(),
+            'image_path': self.image_path.get()
+        }
+        
+        # Validate required fields
+        if not all([data['display_name'], data['age'], data['function'], 
+                   data['person_id'], data['image_path']]):
+            messagebox.showerror("Error", "Please fill all required fields")
+            return
+            
+        try:
+            # Call the registration function from main_app.py
+            add_person_to_db(
+                data['display_name'],
+                int(data['age']),
+                data['function'],
+                data['person_id'],
+                data['hashcode'],
+                os.path.basename(data['image_path']),
+                face_recognition.face_encodings(face_recognition.load_image_file(data['image_path']))[0]
+            )
+            messagebox.showinfo("Success", "Person registered successfully!")
+            self.window.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", f"Registration failed: {str(e)}")
+
+class MainApplication:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Personnel Detection System")
+        self.root.geometry("800x600")
+        self.create_widgets()
+        
+    def create_widgets(self):
+        # Create main container
+        main_frame = ttk.Frame(self.root)
+        main_frame.pack(expand=True, fill='both', padx=20, pady=20)
+        
+        # Title
+        title_label = ttk.Label(
+            main_frame, 
+            text="Personnel Detection System",
+            font=('Helvetica', 24, 'bold')
+        )
+        title_label.pack(pady=40)
+        
+        # Buttons container
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=40)
+        
+        # Register button
+        register_btn = ttk.Button(
+            button_frame,
+            text="Register New Person",
+            command=self.open_registration,
+            width=20
+        )
+        register_btn.pack(pady=10)
+        
+        # Detect button
+        detect_btn = ttk.Button(
+            button_frame,
+            text="Start Detection",
+            command=self.start_detection,
+            width=20
+        )
+        detect_btn.pack(pady=10)
+        
+    def open_registration(self):
+        PersonRegistrationForm(self.root)
+        
+    def start_detection(self):
+        self.root.withdraw()  # Hide the main window
+        # Start the detection process
+        try:
+            init_db()
+            load_config()
+            load_persons_from_db()
+            initialize_ppe_model()
+            self.run_detection()
+        except Exception as e:
+            messagebox.showerror("Error", f"Detection failed: {str(e)}")
+        finally:
+            self.root.deiconify()  # Show the main window again
+            
+    def run_detection(self):
+        cap_source = CONFIG.get("camera_id", 0)
+        if isinstance(cap_source, str) and not cap_source.isdigit():
+            cap_source = cap_source
+        else:
+            cap_source = int(cap_source)
+
+        video_capture = cv2.VideoCapture(cap_source)
+        if not video_capture.isOpened():
+            messagebox.showerror("Error", "Could not open video source")
+            return
+
+        window_name = CONFIG.get("output_window_title", "Video")
+        cv2.namedWindow(window_name)
+        
+        # Run the existing detection loop
+        try:
+            while True:
+                ret, frame = video_capture.read()
+                if not ret:
+                    if isinstance(cap_source, str): print("End of video file."); break
+                    print("Error: Failed to capture frame."); break
+                
+                detected_face_boxes_for_hover.clear()
+                if not CONFIG.get("display_info_panel_on_hover", False):
+                    person_to_show_details = None # Reset for current frame
+
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                face_locations = face_recognition.face_locations(rgb_frame)
+                face_encodings_current_frame = face_recognition.face_encodings(rgb_frame, face_locations)
+
+                ppe_detections_list, _ = detect_ppe_yolov8(frame)
+                recognized_this_frame_details = []
+
+                for i, current_face_encoding in enumerate(face_encodings_current_frame):
+                    name = "Unknown"
+                    person_id_display = "N/A"
+                    metadata_for_this_person = None
+                    
+                    if db_known_face_encodings: # Check if there are any known faces loaded
+                        matches = face_recognition.compare_faces(db_known_face_encodings, current_face_encoding, tolerance=CONFIG.get("face_recognition_tolerance", 0.6))
+                        face_distances = face_recognition.face_distance(db_known_face_encodings, current_face_encoding)
+                        
+                        if len(face_distances) > 0:
+                            best_match_index = np.argmin(face_distances)
+                            if matches[best_match_index]:
+                                # Get metadata from the list using the best_match_index
+                                metadata_for_this_person = db_known_face_metadata_list[best_match_index]
+                                name = metadata_for_this_person.get('display_name', "ErrorName")
+                                person_id_display = metadata_for_this_person.get("ID", "N/A") # 'ID' is the key used in draw_info_panel
+
+                    if name == "Unknown":
+                        if CONFIG.get("show_unknown_person_id", True):
+                            person_id_display = f"UNKN_{unknown_id_counter}"
+                        else:
+                            person_id_display = "Unknown"
+                        if CONFIG.get("log_unknown_detections", False):
+                            print(f"Log: Unknown person detected at {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+                    top, right, bottom, left = face_locations[i]
+                    if name != "Unknown" and metadata_for_this_person: # Ensure metadata exists
+                         detected_face_boxes_for_hover.append((name, (left, top, right, bottom)))
+
+                    id_text_y_offset = -10
+                    id_text_content = f"ID {person_id_display}"
+                    (id_text_w, id_text_h), _ = cv2.getTextSize(id_text_content, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                    
+                    id_bg_top_left = (left, top + id_text_y_offset - id_text_h - 5)
+                    id_bg_bottom_right = (left + id_text_w + 10, top + id_text_y_offset + 5)
+                    if id_bg_top_left[1] < 0:
+                        id_text_y_offset = bottom + 10 
+                        id_bg_top_left = (left, top + id_text_y_offset)
+                        id_bg_bottom_right = (left + id_text_w + 10, top + id_text_y_offset + id_text_h + 5)
+
+                    cv2.rectangle(frame, id_bg_top_left, id_bg_bottom_right, (0,0,0), cv2.FILLED)
+                    cv2.putText(frame, id_text_content, (left + 5, top + id_text_y_offset), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                    cv2.rectangle(frame, (left, top), (right, bottom), (255, 255, 0), 3)
+
+                    recognized_this_frame_details.append({
+                        "name": name, "id": person_id_display, "box": (left, top, right, bottom),
+                        "metadata": metadata_for_this_person
+                    })
+                
+                if any(p['name'] == "Unknown" for p in recognized_this_frame_details):
+                    if CONFIG.get("show_unknown_person_id", True): # only increment if we were actually showing UNKN IDs
+                        unknown_id_counter +=1
+
+                for ppe_label, ppe_confidence, ppe_color, (px, py, pw, ph) in ppe_detections_list:
+                    cv2.rectangle(frame, (px, py), (px + pw, py + ph), ppe_color, 2)
+                    label_text = f"{ppe_label}: {ppe_confidence:.2f}"
+                    text_y = py - 7 if py - 7 > 7 else py + 15
+                    cv2.putText(frame, label_text, (px + 2, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.45, ppe_color, 1, cv2.LINE_AA)
+
+                unknown_face_count = sum(1 for p_detail in recognized_this_frame_details if p_detail["name"] == "Unknown")
+                if unknown_face_count > 0:
+                    cv2.putText(frame, f"WARNING: {unknown_face_count} UNKNOWN FACE(S)", (frame_width // 2 - 200, 30),
+                                cv2.FONT_HERSHEY_TRIPLEX, 0.8, (0, 0, 255), 2)
+
+                if person_to_show_details and person_to_show_details in db_display_name_to_metadata_map:
+                    draw_info_panel(frame, db_display_name_to_metadata_map[person_to_show_details])
+                
+                draw_hud_elements(frame, frame_width)
+                draw_status_bar(frame, frame_width)
+                cv2.imshow(window_name, frame)
+
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'): break
+        finally:
+            video_capture.release()
+            cv2.destroyAllWindows()
+
+def main():
+    root = tk.Tk()
+    app = MainApplication(root)
+    root.mainloop()
+
+if __name__ == "__main__":
     main()
