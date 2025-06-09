@@ -559,6 +559,14 @@ class MainApplication:
             self.root.deiconify()  # Show the main window again
             
     def run_detection(self):
+        # Add global variable references
+        global detected_face_boxes_for_hover, person_to_show_details, unknown_id_counter
+        
+        # Initialize variables that were missing
+        person_to_show_details = None
+        unknown_id_counter = 0
+        frame_width = 0
+
         cap_source = CONFIG.get("camera_id", 0)
         if isinstance(cap_source, str) and not cap_source.isdigit():
             cap_source = cap_source
@@ -573,6 +581,13 @@ class MainApplication:
         window_name = CONFIG.get("output_window_title", "Video")
         cv2.namedWindow(window_name)
         
+        # Get frame width after opening video capture
+        frame_width = int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        
+        # Set mouse callback for hover functionality
+        if CONFIG.get("display_info_panel_on_hover", False):
+            cv2.setMouseCallback(window_name, mouse_event_handler)
+
         # Run the existing detection loop
         try:
             while True:
