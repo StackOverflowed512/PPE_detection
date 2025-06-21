@@ -409,6 +409,86 @@ def main():
     video_capture.release()
     cv2.destroyAllWindows()
 
+def update_person_in_db(person_id_code, display_name, age, function_text, hashcode):
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE persons
+            SET display_name=?, age=?, function_text=?, hashcode=?
+            WHERE person_id_code=?
+        """, (display_name, age, function_text, hashcode, person_id_code))
+        conn.commit()
+        print(f"Updated person {person_id_code} in the database.")
+    except Exception as e:
+        print(f"ERROR: Could not update person: {e}")
+    finally:
+        conn.close()
+
+class EditPersonForm:
+    def __init__(self, parent):
+        self.window = tk.Toplevel(parent)
+        self.window.title("Edit Person")
+        self.window.geometry("400x400")
+        self.create_widgets()
+        self.load_persons()
+
+    def create_widgets(self):
+        ttk.Label(self.window, text="Select Person to Edit:").pack(pady=10)
+        self.person_var = tk.StringVar()
+        self.person_combo = ttk.Combobox(self.window, textvariable=self.person_var, state="readonly")
+        self.person_combo.pack(pady=5)
+        self.person_combo.bind("<<ComboboxSelected>>", self.load_selected_person)
+
+        self.fields = {}
+        for label in ["Display Name", "Age", "Function", "Hashcode"]:
+            ttk.Label(self.window, text=label + ":").pack()
+            entry = ttk.Entry(self.window, width=40)
+            entry.pack()
+            self.fields[label] = entry
+
+        ttk.Button(self.window, text="Update", command=self.update_person).pack(pady=20)
+
+    def load_persons(self):
+        conn = sqlite3.connect(DATABASE_NAME)
+        cursor = conn.cursor()
+        cursor.execute("SELECT person_id_code, display_name FROM persons")
+        self.persons = cursor.fetchall()
+        conn.close()
+        self.person_combo['values'] = [f"{pid} - {name}" for pid, name in self.persons]
+
+    def load_selected_person(self, event=None):
+        idx = self.person_combo.current()
+        if idx < 0: return
+        person_id_code = self.persons[idx][0]
+        conn = sqlite3.connect(DATABASE_NAME)
+        cursor = conn.cursor()
+        cursor.execute("SELECT display_name, age, function_text, hashcode FROM persons WHERE person_id_code=?", (person_id_code,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            for val, key in zip(row, ["Display Name", "Age", "Function", "Hashcode"]):
+                self.fields[key].delete(0, tk.END)
+                self.fields[key].insert(0, str(val) if val is not None else "")
+
+    def update_person(self):
+        idx = self.person_combo.current()
+        if idx < 0:
+            messagebox.showerror("Error", "Select a person to edit.")
+            return
+        person_id_code = self.persons[idx][0]
+        display_name = self.fields["Display Name"].get()
+        age = self.fields["Age"].get()
+        function_text = self.fields["Function"].get()
+        hashcode = self.fields["Hashcode"].get()
+        try:
+            update_person_in_db(person_id_code, display_name, int(age) if age else None, function_text, hashcode)
+            load_persons_from_db()  # Refresh in-memory data
+            messagebox.showinfo("Success", "Person updated successfully!")
+            self.window.destroy()
+        except Exception as e:
+            messagebox.showerror("Error", f"Update failed: {str(e)}")
+
 class PersonRegistrationForm:
     def __init__(self, parent):
         self.window = tk.Toplevel(parent)
@@ -531,7 +611,16 @@ class MainApplication:
             width=20
         )
         register_btn.pack(pady=10)
-        
+
+        # Edit button
+        edit_btn = ttk.Button(
+            button_frame,
+            text="Edit Person",
+            command=self.open_edit_person,
+            width=20
+        )
+        edit_btn.pack(pady=10)
+
         # Detect button
         detect_btn = ttk.Button(
             button_frame,
@@ -543,6 +632,9 @@ class MainApplication:
         
     def open_registration(self):
         PersonRegistrationForm(self.root)
+        
+    def open_edit_person(self):
+        EditPersonForm(self.root)
         
     def start_detection(self):
         self.root.withdraw()  # Hide the main window
